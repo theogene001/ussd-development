@@ -30,7 +30,7 @@ app.post('/ussd', (req, res) => {
     const language = textArray[0];
     if (language !== '1' && language !== '2') level = 0;
 
-    // Save session in the database
+    // Save session
     connection.query(
         'INSERT INTO sessions (sessionID, phoneNumber, userinput) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE userinput = ?',
         [sessionId, phoneNumber, text, text],
@@ -88,70 +88,18 @@ app.post('/ussd', (req, res) => {
         }
     } else if (level === 3) {
         const [lang, main, sub] = textArray;
-
-        // Transaction Example 1: Log transaction and update balance
-        if ((lang === '1' && main === '1' && sub === '1') || (lang === '2' && main === '1' && sub === '1')) {
-            const amount = 5000;
-            const description = lang === '1' ? 'Viewed last transaction' : 'Reba irya nyuma';
-
-            connection.beginTransaction(err => {
-                if (err) {
-                    console.error('❌ Transaction begin error:', err);
-                    response = `END System error. Try again.`;
-                    return res.send(response);
-                }
-
-                connection.query(
-                    'INSERT INTO transactions (phoneNumber, amount, description, created_at) VALUES (?, ?, ?, NOW())',
-                    [phoneNumber, amount, description],
-                    (err, result) => {
-                        if (err) {
-                            return connection.rollback(() => {
-                                console.error('❌ Insert error:', err);
-                                response = `END Failed to log transaction.`;
-                                return res.send(response);
-                            });
-                        }
-
-                        connection.query(
-                            'UPDATE balances SET balance = balance + ? WHERE phoneNumber = ?',
-                            [amount, phoneNumber],
-                            (err2, result2) => {
-                                if (err2) {
-                                    return connection.rollback(() => {
-                                        console.error('❌ Update balance error:', err2);
-                                        response = `END Failed to update balance.`;
-                                        return res.send(response);
-                                    });
-                                }
-
-                                connection.commit(err3 => {
-                                    if (err3) {
-                                        return connection.rollback(() => {
-                                            console.error('❌ Commit error:', err3);
-                                            response = `END Failed to finalize transaction.`;
-                                            return res.send(response);
-                                        });
-                                    }
-
-                                    const lastMsg = lang === '1'
-                                        ? `END Last transaction: ${amount} RWF received`
-                                        : `END Iranyuma: ${amount} RWF`;
-                                    return res.send(lastMsg);
-                                });
-                            }
-                        );
-                    }
-                );
-            });
-
-            return; // avoid sending res twice
-        }
-
-        // Fallback for other suboptions
         if (lang === '1') {
             if (main === '1') {
-                if (sub === '2') {
+                if (sub === '1') {
+                    response = `END Last transaction: 5000 RWF received`;
+                    connection.query(
+                        'INSERT INTO transactions (phoneNumber, amount, description, created_at) VALUES (?, ?, ?, NOW())',
+                        [phoneNumber, 5000, 'Viewed last transaction'],
+                        err => {
+                            if (err) console.error('❌ Transaction log error:', err);
+                        }
+                    );
+                } else if (sub === '2') {
                     response = `END All transactions feature coming soon.`;
                 } else if (sub === '3') {
                     response = `CON Enter Amount to Send`;
@@ -160,39 +108,76 @@ app.post('/ussd', (req, res) => {
                 } else {
                     response = `END Invalid selection`;
                 }
-            } else if (main === '2') {
-                response = sub === '1' ? `END Call us at 1234`
-                    : sub === '2' ? `END Email: help@example.com`
-                    : sub === '0' ? `CON Main Menu\n1. Transactions\n2. Support\n3. Settings\n0. Back`
-                    : `END Invalid option`;
-            } else if (main === '3') {
-                response = sub === '1' ? `END Language change coming soon`
-                    : sub === '2' ? `END PIN reset feature coming soon`
-                    : sub === '0' ? `CON Main Menu\n1. Transactions\n2. Support\n3. Settings\n0. Back`
-                    : `END Invalid option`;
             }
         } else if (lang === '2') {
             if (main === '1') {
-                if (sub === '2') {
+                if (sub === '1') {
+                    response = `END Iranyuma: 5000 RWF`;
+                    connection.query(
+                        'INSERT INTO transactions (phoneNumber, amount, description, created_at) VALUES (?, ?, ?, NOW())',
+                        [phoneNumber, 5000, 'Reba irya nyuma'],
+                        err => {
+                            if (err) console.error('❌ Transaction log error:', err);
+                        }
+                    );
+                } else if (sub === '2') {
                     response = `END Amakuru yose azaboneka vuba`;
                 } else if (sub === '3') {
-                    response = `END Perform a new transaction feature coming soon.`;
+                    response = `CON Andika umubare wohereza`;
                 } else if (sub === '0') {
                     response = `CON Ibyiciro\n1. Amakuru y'imari\n2. Ubufasha\n3. Guhindura\n0. Subira`;
                 } else {
                     response = `END Hitamo siyo`;
                 }
-            } else if (main === '2') {
-                response = sub === '1' ? `END Duhamagare kuri 1234`
-                    : sub === '2' ? `END Email: help@example.com`
-                    : sub === '0' ? `CON Ibyiciro\n1. Amakuru y'imari\n2. Ubufasha\n3. Guhindura\n0. Subira`
-                    : `END Hitamo siyo`;
-            } else if (main === '3') {
-                response = sub === '1' ? `END Guhindura ururimi vuba`
-                    : sub === '2' ? `END Guhindura PIN vuba`
-                    : sub === '0' ? `CON Ibyiciro\n1. Amakuru y'imari\n2. Ubufasha\n3. Guhindura\n0. Subira`
-                    : `END Hitamo siyo`;
             }
+        }
+    } else if (level === 4) {
+        const [lang, main, sub, amount] = textArray;
+
+        if ((lang === '1' && main === '1' && sub === '3') || (lang === '2' && main === '1' && sub === '3')) {
+            const description = lang === '1' ? 'New transaction' : 'Igikorwa gishya';
+            const numericAmount = parseFloat(amount);
+
+            if (isNaN(numericAmount) || numericAmount <= 0) {
+                response = lang === '1' ? `END Invalid amount entered.` : `END Umubare winjiye siwo.`;
+            } else {
+                // Insert transaction in a transaction block
+                connection.beginTransaction(err => {
+                    if (err) {
+                        console.error('❌ Begin transaction error:', err);
+                        return res.send(lang === '1' ? `END System error` : `END Ikosa rya sisitemu`);
+                    }
+
+                    connection.query(
+                        'INSERT INTO transactions (phoneNumber, amount, description, created_at) VALUES (?, ?, ?, NOW())',
+                        [phoneNumber, numericAmount, description],
+                        (err1, result) => {
+                            if (err1) {
+                                return connection.rollback(() => {
+                                    console.error('❌ Insert error:', err1);
+                                    return res.send(lang === '1' ? `END Failed to save transaction.` : `END Ntibishobotse kubika igikorwa.`);
+                                });
+                            }
+
+                            connection.commit(err2 => {
+                                if (err2) {
+                                    return connection.rollback(() => {
+                                        console.error('❌ Commit error:', err2);
+                                        return res.send(lang === '1' ? `END Transaction commit failed.` : `END Igikorwa nticyarangiye neza.`);
+                                    });
+                                }
+
+                                return res.send(lang === '1'
+                                    ? `END Transaction of ${numericAmount} RWF successful.`
+                                    : `END Igikorwa cya ${numericAmount} RWF cyagenze neza.`);
+                            });
+                        }
+                    );
+                });
+                return; // prevent sending response again below
+            }
+        } else {
+            response = `END Invalid entry`;
         }
     } else {
         response = `END Invalid entry`;
@@ -202,6 +187,6 @@ app.post('/ussd', (req, res) => {
     res.send(response);
 });
 
-// Server setup
+// Start the server
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
