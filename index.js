@@ -39,7 +39,6 @@ app.post('/ussd', (req, res) => {
         }
     );
 
-    // Main Menu - Language Selection
     if (level === 0) {
         response = `CON Welcome / Murakaza neza\n1. English\n2. Kinyarwanda`;
     } else if (level === 1) {
@@ -89,24 +88,72 @@ app.post('/ussd', (req, res) => {
         }
     } else if (level === 3) {
         const [lang, main, sub] = textArray;
+
+        // Transaction Example 1: Log transaction and update balance
+        if ((lang === '1' && main === '1' && sub === '1') || (lang === '2' && main === '1' && sub === '1')) {
+            const amount = 5000;
+            const description = lang === '1' ? 'Viewed last transaction' : 'Reba irya nyuma';
+
+            connection.beginTransaction(err => {
+                if (err) {
+                    console.error('❌ Transaction begin error:', err);
+                    response = `END System error. Try again.`;
+                    return res.send(response);
+                }
+
+                connection.query(
+                    'INSERT INTO transactions (phoneNumber, amount, description, created_at) VALUES (?, ?, ?, NOW())',
+                    [phoneNumber, amount, description],
+                    (err, result) => {
+                        if (err) {
+                            return connection.rollback(() => {
+                                console.error('❌ Insert error:', err);
+                                response = `END Failed to log transaction.`;
+                                return res.send(response);
+                            });
+                        }
+
+                        connection.query(
+                            'UPDATE balances SET balance = balance + ? WHERE phoneNumber = ?',
+                            [amount, phoneNumber],
+                            (err2, result2) => {
+                                if (err2) {
+                                    return connection.rollback(() => {
+                                        console.error('❌ Update balance error:', err2);
+                                        response = `END Failed to update balance.`;
+                                        return res.send(response);
+                                    });
+                                }
+
+                                connection.commit(err3 => {
+                                    if (err3) {
+                                        return connection.rollback(() => {
+                                            console.error('❌ Commit error:', err3);
+                                            response = `END Failed to finalize transaction.`;
+                                            return res.send(response);
+                                        });
+                                    }
+
+                                    const lastMsg = lang === '1'
+                                        ? `END Last transaction: ${amount} RWF received`
+                                        : `END Iranyuma: ${amount} RWF`;
+                                    return res.send(lastMsg);
+                                });
+                            }
+                        );
+                    }
+                );
+            });
+
+            return; // avoid sending res twice
+        }
+
+        // Fallback for other suboptions
         if (lang === '1') {
             if (main === '1') {
-                if (sub === '1') {
-                    // View last transaction
-                    response = `END Last transaction: 5000 RWF received`;
-                    // Log the transaction
-                    connection.query(
-                        'INSERT INTO transactions (phoneNumber, amount, description, created_at) VALUES (?, ?, ?, NOW())',
-                        [phoneNumber, 5000, 'Viewed last transaction'],
-                        err => {
-                            if (err) console.error('❌ Transaction log error:', err);
-                        }
-                    );
-                } else if (sub === '2') {
-                    // View all transactions
+                if (sub === '2') {
                     response = `END All transactions feature coming soon.`;
                 } else if (sub === '3') {
-                    // Perform new transaction
                     response = `CON Enter Amount to Send`;
                 } else if (sub === '0') {
                     response = `CON Main Menu\n1. Transactions\n2. Support\n3. Settings\n0. Back`;
@@ -114,38 +161,19 @@ app.post('/ussd', (req, res) => {
                     response = `END Invalid selection`;
                 }
             } else if (main === '2') {
-                if (sub === '1') {
-                    response = `END Call us at 1234`;
-                } else if (sub === '2') {
-                    response = `END Email: help@example.com`;
-                } else if (sub === '0') {
-                    response = `CON Main Menu\n1. Transactions\n2. Support\n3. Settings\n0. Back`;
-                } else {
-                    response = `END Invalid option`;
-                }
+                response = sub === '1' ? `END Call us at 1234`
+                    : sub === '2' ? `END Email: help@example.com`
+                    : sub === '0' ? `CON Main Menu\n1. Transactions\n2. Support\n3. Settings\n0. Back`
+                    : `END Invalid option`;
             } else if (main === '3') {
-                if (sub === '1') {
-                    response = `END Language change coming soon`;
-                } else if (sub === '2') {
-                    response = `END PIN reset feature coming soon`;
-                } else if (sub === '0') {
-                    response = `CON Main Menu\n1. Transactions\n2. Support\n3. Settings\n0. Back`;
-                } else {
-                    response = `END Invalid option`;
-                }
+                response = sub === '1' ? `END Language change coming soon`
+                    : sub === '2' ? `END PIN reset feature coming soon`
+                    : sub === '0' ? `CON Main Menu\n1. Transactions\n2. Support\n3. Settings\n0. Back`
+                    : `END Invalid option`;
             }
         } else if (lang === '2') {
             if (main === '1') {
-                if (sub === '1') {
-                    response = `END Iranyuma: 5000 RWF`;
-                    connection.query(
-                        'INSERT INTO transactions (phoneNumber, amount, description, created_at) VALUES (?, ?, ?, NOW())',
-                        [phoneNumber, 5000, 'Reba irya nyuma'],
-                        err => {
-                            if (err) console.error('❌ Transaction log error:', err);
-                        }
-                    );
-                } else if (sub === '2') {
+                if (sub === '2') {
                     response = `END Amakuru yose azaboneka vuba`;
                 } else if (sub === '3') {
                     response = `END Perform a new transaction feature coming soon.`;
@@ -155,25 +183,15 @@ app.post('/ussd', (req, res) => {
                     response = `END Hitamo siyo`;
                 }
             } else if (main === '2') {
-                if (sub === '1') {
-                    response = `END Duhamagare kuri 1234`;
-                } else if (sub === '2') {
-                    response = `END Email: help@example.com`;
-                } else if (sub === '0') {
-                    response = `CON Ibyiciro\n1. Amakuru y'imari\n2. Ubufasha\n3. Guhindura\n0. Subira`;
-                } else {
-                    response = `END Hitamo siyo`;
-                }
+                response = sub === '1' ? `END Duhamagare kuri 1234`
+                    : sub === '2' ? `END Email: help@example.com`
+                    : sub === '0' ? `CON Ibyiciro\n1. Amakuru y'imari\n2. Ubufasha\n3. Guhindura\n0. Subira`
+                    : `END Hitamo siyo`;
             } else if (main === '3') {
-                if (sub === '1') {
-                    response = `END Guhindura ururimi vuba`;
-                } else if (sub === '2') {
-                    response = `END Guhindura PIN vuba`;
-                } else if (sub === '0') {
-                    response = `CON Ibyiciro\n1. Amakuru y'imari\n2. Ubufasha\n3. Guhindura\n0. Subira`;
-                } else {
-                    response = `END Hitamo siyo`;
-                }
+                response = sub === '1' ? `END Guhindura ururimi vuba`
+                    : sub === '2' ? `END Guhindura PIN vuba`
+                    : sub === '0' ? `CON Ibyiciro\n1. Amakuru y'imari\n2. Ubufasha\n3. Guhindura\n0. Subira`
+                    : `END Hitamo siyo`;
             }
         }
     } else {
