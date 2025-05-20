@@ -30,7 +30,7 @@ app.post('/ussd', (req, res) => {
     const language = textArray[0];
     if (language !== '1' && language !== '2') level = 0;
 
-    // Save session
+    // Save session (assuming there's a `sessions` table)
     connection.query(
         'INSERT INTO sessions (sessionID, phoneNumber, userinput) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE userinput = ?',
         [sessionId, phoneNumber, text, text],
@@ -93,8 +93,8 @@ app.post('/ussd', (req, res) => {
                 if (sub === '1') {
                     response = `END Last transaction: 5000 RWF received`;
                     connection.query(
-                        'INSERT INTO transactions (phoneNumber, amount, description, created_at) VALUES (?, ?, ?, NOW())',
-                        [phoneNumber, 5000, 'Viewed last transaction'],
+                        'INSERT INTO transactions (sessionID, action) VALUES (?, ?)',
+                        [sessionId, 'Viewed last transaction'],
                         err => {
                             if (err) console.error('❌ Transaction log error:', err);
                         }
@@ -114,8 +114,8 @@ app.post('/ussd', (req, res) => {
                 if (sub === '1') {
                     response = `END Iranyuma: 5000 RWF`;
                     connection.query(
-                        'INSERT INTO transactions (phoneNumber, amount, description, created_at) VALUES (?, ?, ?, NOW())',
-                        [phoneNumber, 5000, 'Reba irya nyuma'],
+                        'INSERT INTO transactions (sessionID, action) VALUES (?, ?)',
+                        [sessionId, 'Reba irya nyuma'],
                         err => {
                             if (err) console.error('❌ Transaction log error:', err);
                         }
@@ -141,7 +141,6 @@ app.post('/ussd', (req, res) => {
             if (isNaN(numericAmount) || numericAmount <= 0) {
                 response = lang === '1' ? `END Invalid amount entered.` : `END Umubare winjiye siwo.`;
             } else {
-                // Insert transaction in a transaction block
                 connection.beginTransaction(err => {
                     if (err) {
                         console.error('❌ Begin transaction error:', err);
@@ -149,8 +148,8 @@ app.post('/ussd', (req, res) => {
                     }
 
                     connection.query(
-                        'INSERT INTO transactions (phoneNumber, amount, description, created_at) VALUES (?, ?, ?, NOW())',
-                        [phoneNumber, numericAmount, description],
+                        'INSERT INTO transactions (sessionID, action) VALUES (?, ?)',
+                        [sessionId, `${description}: ${numericAmount} RWF`],
                         (err1, result) => {
                             if (err1) {
                                 return connection.rollback(() => {
@@ -174,7 +173,7 @@ app.post('/ussd', (req, res) => {
                         }
                     );
                 });
-                return; // prevent sending response again below
+                return; // prevent duplicate response
             }
         } else {
             response = `END Invalid entry`;
