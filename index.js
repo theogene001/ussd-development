@@ -55,7 +55,7 @@ app.post('/ussd', (req, res) => {
         if (language === '1') {
             switch (option) {
                 case '1':
-                    response = `CON Transactions:\n1. View Last Transaction\n2. View All Transactions\n3. Perform New Transaction\n0. Back`;
+                    response = `CON Transactions:\n1. View Last Transaction\n2. Send Money\n0. Back`;
                     break;
                 case '2':
                     response = `CON Support:\n1. Call Us\n2. Email Us\n0. Back`;
@@ -72,7 +72,7 @@ app.post('/ussd', (req, res) => {
         } else if (language === '2') {
             switch (option) {
                 case '1':
-                    response = `CON Amakuru y'imari:\n1. Reba irya nyuma\n2. Reba byose\n3. Kora igikorwa\n0. Subira`;
+                    response = `CON Amakuru y'imari:\n1. Reba irya nyuma\n2. Ohereza Amafaranga\n0. Subira`;
                     break;
                 case '2':
                     response = `CON Ubufasha:\n1. Hamagara\n2. Email\n0. Subira`;
@@ -93,25 +93,35 @@ app.post('/ussd', (req, res) => {
             if (main === '1') {
                 if (sub === '1') {
                     // View last transaction
-                    response = `END Last transaction: 5000 RWF received`;
-                    // Log the transaction
                     connection.query(
-                        'INSERT INTO transactions (phoneNumber, amount, description, created_at) VALUES (?, ?, ?, NOW())',
-                        [phoneNumber, 5000, 'Viewed last transaction'],
-                        err => {
-                            if (err) console.error('❌ Transaction log error:', err);
+                        'SELECT amount, description, created_at FROM transactions WHERE phoneNumber = ? ORDER BY created_at DESC LIMIT 1',
+                        [phoneNumber],
+                        (err, result) => {
+                            if (err) {
+                                response = `END Error fetching transaction.`;
+                                return;
+                            }
+
+                            if (result.length === 0) {
+                                response = `END No transaction found.`;
+                            } else {
+                                const lastTransaction = result[0];
+                                response = `END Last transaction: ${lastTransaction.amount} RWF, ${lastTransaction.description}, on ${lastTransaction.created_at}`;
+                            }
+
+                            res.set('Content-Type', 'text/plain');
+                            res.send(response);
                         }
                     );
                 } else if (sub === '2') {
-                    // View all transactions
-                    response = `END All transactions feature coming soon.`;
-                } else if (sub === '3') {
-                    // Perform new transaction
-                    response = `CON Enter Amount to Send`;
+                    // Send Money
+                    response = `CON Enter Amount to Send (in RWF)`;
+                    res.set('Content-Type', 'text/plain');
+                    res.send(response);
                 } else if (sub === '0') {
                     response = `CON Main Menu\n1. Transactions\n2. Support\n3. Settings\n0. Back`;
-                } else {
-                    response = `END Invalid selection`;
+                    res.set('Content-Type', 'text/plain');
+                    res.send(response);
                 }
             } else if (main === '2') {
                 if (sub === '1') {
@@ -137,22 +147,36 @@ app.post('/ussd', (req, res) => {
         } else if (lang === '2') {
             if (main === '1') {
                 if (sub === '1') {
-                    response = `END Iranyuma: 5000 RWF`;
+                    // View last transaction (in Kinyarwanda)
                     connection.query(
-                        'INSERT INTO transactions (phoneNumber, amount, description, created_at) VALUES (?, ?, ?, NOW())',
-                        [phoneNumber, 5000, 'Reba irya nyuma'],
-                        err => {
-                            if (err) console.error('❌ Transaction log error:', err);
+                        'SELECT amount, description, created_at FROM transactions WHERE phoneNumber = ? ORDER BY created_at DESC LIMIT 1',
+                        [phoneNumber],
+                        (err, result) => {
+                            if (err) {
+                                response = `END Ikosa ryo kubona amakuru.`;
+                                return;
+                            }
+
+                            if (result.length === 0) {
+                                response = `END Nta transaction ziriho.`;
+                            } else {
+                                const lastTransaction = result[0];
+                                response = `END Iranyuma: ${lastTransaction.amount} RWF, ${lastTransaction.description}, kuri ${lastTransaction.created_at}`;
+                            }
+
+                            res.set('Content-Type', 'text/plain');
+                            res.send(response);
                         }
                     );
                 } else if (sub === '2') {
-                    response = `END Amakuru yose azaboneka vuba`;
-                } else if (sub === '3') {
-                    response = `END Perform a new transaction feature coming soon.`;
+                    // Send Money (in Kinyarwanda)
+                    response = `CON Andika umubare wohereza (mu RWF)`;
+                    res.set('Content-Type', 'text/plain');
+                    res.send(response);
                 } else if (sub === '0') {
                     response = `CON Ibyiciro\n1. Amakuru y'imari\n2. Ubufasha\n3. Guhindura\n0. Subira`;
-                } else {
-                    response = `END Hitamo siyo`;
+                    res.set('Content-Type', 'text/plain');
+                    res.send(response);
                 }
             } else if (main === '2') {
                 if (sub === '1') {
@@ -176,12 +200,34 @@ app.post('/ussd', (req, res) => {
                 }
             }
         }
+    } else if (level === 4) {
+        // Handle Money Transfer (After User Inputs Amount)
+        const amount = textArray[3];
+        if (amount) {
+            // Log the transaction in the database
+            connection.query(
+                'INSERT INTO transactions (phoneNumber, amount, description, created_at) VALUES (?, ?, ?, NOW())',
+                [phoneNumber, amount, 'Money Sent', (err) => {
+                    if (err) {
+                        response = `END Transaction Failed.`;
+                    } else {
+                        response = `END Transaction successful: ${amount} RWF sent.`;
+                    }
+
+                    res.set('Content-Type', 'text/plain');
+                    res.send(response);
+                }]
+            );
+        } else {
+            response = `END Invalid amount.`;
+            res.set('Content-Type', 'text/plain');
+            res.send(response);
+        }
     } else {
         response = `END Invalid entry`;
+        res.set('Content-Type', 'text/plain');
+        res.send(response);
     }
-
-    res.set('Content-Type', 'text/plain');
-    res.send(response);
 });
 
 // Server setup
